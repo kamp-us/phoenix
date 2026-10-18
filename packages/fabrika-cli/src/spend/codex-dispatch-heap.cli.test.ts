@@ -95,6 +95,7 @@ it("collects a history far larger than its heap and records every counted respon
 	const before = digest(sessions);
 	const ledger = join(dir, "ledger.jsonl");
 	const options = {
+		policy: "on",
 		sessions,
 		ledger,
 		worktree,

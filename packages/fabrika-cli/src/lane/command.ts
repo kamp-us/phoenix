@@ -194,7 +194,7 @@ const dispatch = leafCommand(
 			"dispatch",
 			"Runs one lane task under Codex in a fresh worktree and prints {harness, task, event, worktree}.",
 			{
-				11: "input, isolation, process or state failure",
+				11: "input, config, isolation, process or state failure",
 				18: "unsupported harness or inactive state",
 				22: "no unique new terminal",
 				39: ROOT_EXITS[39],

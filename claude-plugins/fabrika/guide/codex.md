@@ -60,7 +60,7 @@ hooks. This uses Codex's supported repository hook path and writes no per-user c
 
 Restart Codex, trust the repository, then review and trust these definitions with `/hooks`.
 Start Fabrika work normally. The hook binds the issue when Fabrika reads or claims it and replays
-usage at later callbacks. Lane dispatch also collects without hooks.
+usage at later callbacks. With the default `codexUsage: "on"` policy, lane dispatch also collects without hooks.
 
 Collection reads Codex 0.153.4 and 0.154.0 session files; another version records incomplete
 coverage rather than guessing. Coverage is always `partial`, because readable files cannot prove
@@ -68,7 +68,30 @@ that no unseen subagent ran. Usage lands in
 `.fabrika/spend-ledger.jsonl` in the primary checkout; `fabrika spend rollup` prints its totals
 with that coverage. A recording error prints a warning and never changes the task's result.
 
+## Disable automatic usage collection
+
+Set this key in the repository's tracked `.fabrika.jsonc`:
+
+```json
+{
+  "codexUsage": "off"
+}
+```
+
+Run `fabrika status settings` to confirm the value and its source, then start a new dispatch.
+Native hooks read the policy on their next callback and return quietly, including with an old
+dispatch binding. An active dispatch keeps its entry policy. Set `"on"` or remove the key to
+restore the default collection behavior. The key cannot be set in `.fabrika.local.jsonc` or an
+environment variable.
+
+Dispatch prints one notice that accounting is unavailable. The setting skips automatic transcript,
+inventory, association and ledger collection; native logs, agent execution, terminal proof and
+manual spend commands remain available. Existing totals do not cover disabled work. A malformed
+or unreadable policy refuses a new dispatch before launch; hooks give a nonfatal unavailable notice.
+
 ## Recover interrupted collection
+
+Enable collection before replaying; `codexUsage: "off"` also skips recovery callbacks.
 
 If the hook reports an unresolved issue association, run an issue read with a literal number,
 such as `node packages/fabrika-cli/src/bin.ts review criteria 123`. The next callback replays

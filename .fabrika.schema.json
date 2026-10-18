@@ -467,6 +467,14 @@
 				"additionalProperties": false
 			}
 		},
+		"codexUsage": {
+			"type": "string",
+			"enum": [
+				"on",
+				"off"
+			],
+			"description": "Automatic Codex usage collection: on (the shipped default) or off (dispatch and native hooks skip transcript, association and ledger collection; accounting is unavailable). Tracked repository policy only. Manual spend commands, existing records, native logs and other providers are unchanged."
+		},
 		"configValidators": {
 			"type": "array",
 			"description": "The repo's own commands that machine-read a file no `build check` surface opens — a root config file such as lefthook.yml, or non-JS source such as a .java file — every `build check` run whose diff touches a file an entry reads spawns that entry, whatever `--surface` names. Empty (or absent) leaves such files unvalidatable.",

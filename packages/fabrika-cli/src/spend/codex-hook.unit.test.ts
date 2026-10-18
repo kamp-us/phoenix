@@ -2,7 +2,7 @@ import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from "node:
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {NodeServices} from "@effect/platform-node";
-import {Effect} from "effect";
+import {Effect, FileSystem} from "effect";
 import {afterEach, expect, it} from "vitest";
 import {runCodexHook} from "./codex-hook-verb.ts";
 import {readUsageLedger} from "./usage-ledger.ts";
@@ -13,6 +13,47 @@ afterEach(() => {
 });
 const live = <A, E>(effect: Effect.Effect<A, E, NodeServices.NodeServices>) =>
 	Effect.runPromise(Effect.provide(effect, NodeServices.layer));
+
+it("skips every collection filesystem operation on repeated disabled callbacks", async () => {
+	const touched: string[] = [];
+	const layerStub = FileSystem.layerNoop({
+		readFileString: (path) => {
+			touched.push(path);
+			return Effect.die("disabled hook opened a transcript or binding");
+		},
+		makeDirectory: (path) => {
+			touched.push(path);
+			return Effect.die("disabled hook wrote association state");
+		},
+		exists: (path) => {
+			touched.push(path);
+			return Effect.die("disabled hook probed collection state");
+		},
+	});
+	for (const hook_event_name of ["PreToolUse", "Stop", "SubagentStart", "SubagentStop", "Stop"]) {
+		const options = {
+			policy: "off" as const,
+			input: JSON.stringify({
+				hook_event_name,
+				session_id: "native",
+				turn_id: "turn",
+				cwd: "/fixture/worktree",
+				transcript_path: "/fixture/transcript.jsonl",
+				agent_id: "child",
+				agent_transcript_path: "/fixture/child.jsonl",
+				tool_input: {command: "fabrika build issue 8950"},
+			}),
+			sessions: "/fixture/sessions",
+			state: "/fixture/state",
+			ledger: "/fixture/ledger",
+			repo: "o/r",
+		};
+		const result = await live(runCodexHook(options).pipe(Effect.provide(layerStub)));
+		expect(result.code).toBe(0);
+		expect(JSON.parse(result.stdout)).toEqual({});
+	}
+	expect(touched).toEqual([]);
+});
 it("binds interactive work at the native tool callback and collects again at Stop", async () => {
 	const dir = mkdtempSync(join(tmpdir(), "codex-hook-"));
 	dirs.push(dir);
@@ -43,7 +84,14 @@ it("binds interactive work at the native tool callback and collects again at Sto
 		tool_name: "exec_command",
 		tool_input: {cmd: "node packages/fabrika-cli/src/bin.ts build claim 8950"},
 	};
-	const options = {input: JSON.stringify(event), sessions, state, ledger, repo: "o/r"};
+	const options = {
+		policy: "on" as const,
+		input: JSON.stringify(event),
+		sessions,
+		state,
+		ledger,
+		repo: "o/r",
+	};
 	const started = await live(runCodexHook(options));
 	expect(started.code).toBe(0);
 	const usage = {
@@ -133,6 +181,7 @@ it("keeps an unresolved issue warning when the native callback has no turn ID", 
 	dirs.push(dir);
 	const result = await live(
 		runCodexHook({
+			policy: "on",
 			input: JSON.stringify({
 				session_id: "native",
 				hook_event_name: "PreToolUse",

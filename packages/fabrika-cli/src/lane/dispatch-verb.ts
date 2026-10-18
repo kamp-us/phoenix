@@ -1,6 +1,7 @@
-import {Effect, FileSystem, Path, Result, Stream} from "effect";
+import {Console, Effect, FileSystem, Path, Result, Stream} from "effect";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import {assemblyRefreshKey} from "../config/keys/assembly-refresh.ts";
+import {codexUsageKey} from "../config/keys/codex-usage.ts";
 import {dependencyReconcilerKey} from "../config/keys/dependency-reconciler.ts";
 import {readKey} from "../config/read-key.ts";
 import {execCapture, execStatus} from "../io/exec.ts";
@@ -98,6 +99,13 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 	if (!path.isAbsolute(options.worktree) || !path.isAbsolute(options.skills)) {
 		return refuse(LANE_UNREADABLE, `${VERB}: --worktree and --skills must be absolute paths.`);
 	}
+	const codexUsage = yield* readKey(options.cwd, codexUsageKey);
+	if (codexUsage._tag === "Refused")
+		return refuse(LANE_UNREADABLE, `${VERB}: ${codexUsage.reason}.`);
+	if (codexUsage.value === "off")
+		yield* Console.warn(
+			`Fabrika usage: automatic Codex collection is off (${codexUsage.note}); accounting is unavailable.`,
+		);
 	const refreshed = yield* refreshBeforeChild(options, refresh);
 	if (refreshed._tag === "Refused") return refreshed.outcome;
 	const refreshNotes = refreshed._tag === "Refreshed" ? refreshed.notes : [];
@@ -247,6 +255,7 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 		}
 		const codexHome = options.env.CODEX_HOME ?? path.join(options.env.HOME ?? "", ".codex");
 		const usage = {
+			policy: codexUsage.value,
 			sessions: path.join(codexHome, "sessions"),
 			ledger: path.join(primary, ".fabrika", "spend-ledger.jsonl"),
 			state: path.join(common.stdout.trim(), "fabrika-codex-usage", "dispatch"),
@@ -260,14 +269,15 @@ export const runDispatch = Effect.fn("lane.dispatch")(function* (
 		yield* collectCodexDispatch(usage);
 		const child = yield* Effect.scoped(
 			Effect.gen(function* () {
-				yield* Effect.forkScoped(
-					Effect.forever(
-						Effect.gen(function* () {
-							yield* Effect.sleep("5 seconds");
-							yield* collectCodexDispatch(usage);
-						}),
-					),
-				);
+				if (usage.policy === "on")
+					yield* Effect.forkScoped(
+						Effect.forever(
+							Effect.gen(function* () {
+								yield* Effect.sleep("5 seconds");
+								yield* collectCodexDispatch(usage);
+							}),
+						),
+					);
 				const handle = yield* ChildProcess.make("codex", ["exec", "--cd", actual, "-"], {
 					cwd: actual,
 					env: {...options.env, FABRIKA_SESSION_ID: identity},
