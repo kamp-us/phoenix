@@ -139,7 +139,7 @@ catalog:
   vitest: ^4.1.5
   ws: ^8.21.3
   yaml: 2.9.0
-  zod: 4.4.3
+  zod: 4.6.6
 
 # Tuval's picker keeps its existing matcher pin; Effect consumers share the root catalog.
 catalogs:
